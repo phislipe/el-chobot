@@ -42,14 +42,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-client.on("ready", () => {
-  let activities = [
-    `Power Rangers`
-  ];
-
-  client.user.setActivity(`${activities}`, { type: "WATCHING" });
-})
-
 client.once(Events.ClientReady, (c) => {
   client.user.setStatus("dnd");
   console.log(`Ready! Logged in as ${c.user.tag}`);

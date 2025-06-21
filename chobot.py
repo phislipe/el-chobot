@@ -142,4 +142,40 @@ async def rolar(interaction: discord.Interaction, dado: str):
     view.message = await interaction.original_response()
 
 
+@bot.tree.command(name="enquete", description="Cria uma enquete com múltiplas opções", guild=guild)
+@app_commands.describe(
+    pergunta="Pergunta da enquete",
+    opcoes="Opções separadas por vírgula. Ex: Sim, Não, Talvez"
+)
+async def enquete(interaction: discord.Interaction, pergunta: str, opcoes: str):
+    opcoes_lista = [op.strip() for op in opcoes.split(",") if op.strip()]
+    
+    if not 2 <= len(opcoes_lista) <= 20:
+        await interaction.response.send_message(
+            "Você deve fornecer entre 2 e 20 opções, separadas por vírgula.",
+            ephemeral=True
+        )
+        return
+
+    emojis = [
+        "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯",
+        "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹"
+    ]
+
+    descricao = "\n".join(f"{emojis[i]} {op}" for i, op in enumerate(opcoes_lista))
+
+    embed = discord.Embed(
+        title=f"📊 {pergunta}",
+        description=descricao,
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text=f"Iniciada por {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+    msg = await interaction.original_response()
+
+    for i in range(len(opcoes_lista)):
+        await msg.add_reaction(emojis[i])
+
+
 bot.run(TOKEN)

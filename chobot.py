@@ -1,8 +1,10 @@
 import os
+import re
 import random
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View, Button
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -70,44 +72,74 @@ async def convite(interaction: discord.Interaction):
     )
 
 
-@bot.tree.command(name="rolar", description="Rola um dado com valor escolhido", guild=guild)
-@app_commands.describe(d="Valor do dado")
-async def rolar(interaction: discord.Interaction, d: int):
-    if d < 2:
+class RollAgainView(View):
+    def __init__(self, dado: str):
+        super().__init__(timeout=15)
+        self.dado = dado
+        self.message = None
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.NotFound:
+                pass
+
+    @discord.ui.button(label="🎲 Rolar novamente", style=discord.ButtonStyle.primary)
+    async def reroll_button(self, interaction: discord.Interaction, button: Button):
+        match = re.match(r"^(\d+)d(\d+)$", self.dado.lower())
+        if not match:
+            await interaction.response.send_message(
+                "Formato inválido. Use XdY, ex: 4d6",
+                ephemeral=True
+            )
+            return
+
+        qtd, faces = int(match.group(1)), int(match.group(2))
+        rolls = [random.randint(1, faces) for _ in range(qtd)]
+        total = sum(rolls)
+
+        embed = discord.Embed(
+            title=f"Rolagem {qtd}d{faces}",
+            description=f"Rolagens: {', '.join(str(r) for r in rolls)}\nTotal: **{total}**",
+            color=discord.Color.orange()
+        )
+        embed.set_footer(text=f"Rolado por {interaction.user.display_name}")
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+@bot.tree.command(name="rolar", description="Rola dados no formato XdY (ex: 4d6)", guild=guild)
+@app_commands.describe(dado="Formato XdY, por exemplo: 4d6")
+async def rolar(interaction: discord.Interaction, dado: str):
+    match = re.match(r"^(\d+)d(\d+)$", dado.lower())
+    if not match:
         await interaction.response.send_message(
-            "O valor do dado deve ser no mínimo 2.",
+            "Formato inválido. Use XdY, ex: 4d6",
             ephemeral=True
         )
         return
 
-    diceroll = random.randint(1, d)
+    qtd, faces = int(match.group(1)), int(match.group(2))
+    if qtd < 1 or faces < 2:
+        await interaction.response.send_message(
+            "Quantidade mínima: 1 dado de 2 lados.",
+            ephemeral=True
+        )
+        return
 
-    if d == 20 and diceroll == 20:
-        color = discord.Color.green()
-        title = "**ACERTO CRÍTICO!**"
-        image = "https://i.ibb.co/wyQPZcT/success.gif"
-    elif d == 20 and diceroll == 1:
-        color = discord.Color.red()
-        title = "**FALHA CRÍTICA!**"
-        image = "https://i.ibb.co/N9wwKW8/fail.gif"
-    else:
-        color = discord.Color.blue()
-        title = None
-        image = None
+    rolls = [random.randint(1, faces) for _ in range(qtd)]
+    total = sum(rolls)
 
-    embed = discord.Embed(color=color)
-    embed.set_author(name=f"D{d} 🎲")
-    if title:
-        embed.add_field(name=title, value=" ", inline=False)
-    embed.add_field(
-        name=" ",
-        value=f"**<@{interaction.user.id}>** rolou um **{diceroll}**",
-        inline=False
+    embed = discord.Embed(
+        title=f"Rolagem {qtd}d{faces}",
+        description=f"Rolagens: {', '.join(str(r) for r in rolls)}\nTotal: **{total}**",
+        color=discord.Color.orange()
     )
-    if image:
-        embed.set_image(url=image)
+    embed.set_footer(text=f"Rolado por {interaction.user.display_name}")
 
-    await interaction.response.send_message(embed=embed)
+    view = RollAgainView(dado)
+    await interaction.response.send_message(embed=embed, view=view)
+    view.message = await interaction.original_response()
 
 
 bot.run(TOKEN)

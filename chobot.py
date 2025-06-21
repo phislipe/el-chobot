@@ -2,39 +2,43 @@ import os
 import re
 import asyncio
 import random
+import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import View, Button
 from dotenv import load_dotenv
 
-# Load environment variables
+logging.basicConfig(level=logging.INFO)
+
+EMOJIS_OPCOES = [
+    "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯",
+    "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹"
+]
+
 load_dotenv(dotenv_path="ini.env")
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Constants
 CHANNEL_ID = 1385795977600045217
 GUILD_ID = 737751372790890508
 guild = discord.Object(id=GUILD_ID)
 
-# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Track last webhook message
 last_webhook_message_id = None
 
 
 @bot.event
 async def on_ready():
-    print(f"Bot conectado como {bot.user}")
+    logging.info(f"Bot conectado como {bot.user}")
     await bot.change_presence(status=discord.Status.dnd)
     try:
         await bot.tree.sync(guild=guild)
-        print("Comandos sincronizados")
+        logging.info("Comandos sincronizados")
     except Exception as e:
-        print(f"Erro ao sincronizar comandos: {e}")
+        logging.error(f"Erro ao sincronizar comandos: {e}")
 
 
 @bot.event
@@ -50,6 +54,8 @@ async def on_message(message: discord.Message):
             await old_msg.delete()
         except discord.NotFound:
             pass
+        except Exception as e:
+            logging.warning(f"Erro ao deletar mensagem anterior: {e}")
 
     last_webhook_message_id = message.id
 
@@ -97,6 +103,14 @@ class RollAgainView(View):
             return
 
         qtd, faces = int(match.group(1)), int(match.group(2))
+
+        if qtd < 1 or faces < 2 or qtd > 100 or faces > 1000:
+            await interaction.response.send_message(
+                "Use até 100 dados com até 1000 lados.",
+                ephemeral=True
+            )
+            return
+
         rolls = [random.randint(1, faces) for _ in range(qtd)]
         total = sum(rolls)
 
@@ -122,9 +136,9 @@ async def rolar(interaction: discord.Interaction, dado: str):
         return
 
     qtd, faces = int(match.group(1)), int(match.group(2))
-    if qtd < 1 or faces < 2:
+    if qtd < 1 or faces < 2 or qtd > 100 or faces > 1000:
         await interaction.response.send_message(
-            "Quantidade mínima: 1 dado de 2 lados.",
+            "Use até 100 dados com até 1000 lados.",
             ephemeral=True
         )
         return
@@ -151,7 +165,7 @@ async def rolar(interaction: discord.Interaction, dado: str):
 )
 async def enquete(interaction: discord.Interaction, pergunta: str, opcoes: str):
     opcoes_lista = [op.strip() for op in opcoes.split(",") if op.strip()]
-    
+
     if not 2 <= len(opcoes_lista) <= 20:
         await interaction.response.send_message(
             "Você deve fornecer entre 2 e 20 opções, separadas por vírgula.",
@@ -159,12 +173,7 @@ async def enquete(interaction: discord.Interaction, pergunta: str, opcoes: str):
         )
         return
 
-    emojis = [
-        "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯",
-        "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹"
-    ]
-
-    descricao = "\n".join(f"{emojis[i]} {op}" for i, op in enumerate(opcoes_lista))
+    descricao = "\n".join(f"{EMOJIS_OPCOES[i]} {op}" for i, op in enumerate(opcoes_lista))
 
     embed = discord.Embed(
         title=f"📊 {pergunta}",
@@ -177,7 +186,7 @@ async def enquete(interaction: discord.Interaction, pergunta: str, opcoes: str):
     msg = await interaction.original_response()
 
     for i in range(len(opcoes_lista)):
-        await msg.add_reaction(emojis[i])
+        await msg.add_reaction(EMOJIS_OPCOES[i])
 
 
 class SorteioView(View):
@@ -189,14 +198,17 @@ class SorteioView(View):
 
     async def interaction_check(self, interaction):
         if interaction.user != self.iniciador:
-            await interaction.response.send_message("Só o iniciador pode usar esses botões.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Apenas {self.iniciador} pode sortear ou cancelar.",
+                ephemeral=True
+            )
             return False
         return True
 
     @discord.ui.button(label="🎲 Sortear", style=discord.ButtonStyle.success)
     async def sortear(self, interaction: discord.Interaction, button: Button):
         msg = await interaction.channel.fetch_message(self.message.id)
-        reaction = discord.utils.get(msg.reactions, emoji=self.emoji)
+        reaction = next((r for r in msg.reactions if str(r.emoji) == str(self.emoji)), None)
 
         if reaction is None or reaction.count <= 1:
             await interaction.response.edit_message(content="Ninguém reagiu para participar do sorteio.", view=None)
@@ -229,8 +241,8 @@ async def sorteio_reacao(interaction: discord.Interaction, nome: str, tempo: int
     msg = await interaction.original_response()
     try:
         await msg.add_reaction(emoji)
-    except:
-        await interaction.followup.send("Emoji inválido.", ephemeral=True)
+    except discord.HTTPException:
+        await interaction.followup.send("Emoji inválido ou sem permissão para usá-lo.", ephemeral=True)
         return
 
     view = SorteioView(interaction, emoji, timeout=tempo)
@@ -239,12 +251,10 @@ async def sorteio_reacao(interaction: discord.Interaction, nome: str, tempo: int
 
     await view.wait()
 
-    if view.is_finished():  # Ou view.is_finished() == True
-        # Se a view já foi parada (botão clicado)
-        return  # Não faça mais nada
+    if view.is_finished():
+        return
 
-    # Caso timeout e view não foi parada, faça o sorteio automático
-    reaction = discord.utils.get(msg.reactions, emoji=emoji)
+    reaction = next((r for r in msg.reactions if str(r.emoji) == str(emoji)), None)
     if reaction is None or reaction.count <= 1:
         await interaction.followup.send("Ninguém reagiu para participar do sorteio.", ephemeral=True)
         return

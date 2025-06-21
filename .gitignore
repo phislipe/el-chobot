@@ -1,2 +1,21 @@
-node_modules
-config.json
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Env files
+*.env
+ini.env
+
+# Virtual environment
+venv/
+.env/
+
+# IDE/project files
+.vscode/
+*.code-workspace
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db

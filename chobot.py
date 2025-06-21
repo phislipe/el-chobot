@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 import random
 import discord
 from discord import app_commands
@@ -108,6 +109,7 @@ class RollAgainView(View):
 
         await interaction.response.edit_message(embed=embed, view=self)
 
+
 @bot.tree.command(name="rolar", description="Rola dados no formato XdY (ex: 4d6)", guild=guild)
 @app_commands.describe(dado="Formato XdY, por exemplo: 4d6")
 async def rolar(interaction: discord.Interaction, dado: str):
@@ -177,5 +179,80 @@ async def enquete(interaction: discord.Interaction, pergunta: str, opcoes: str):
     for i in range(len(opcoes_lista)):
         await msg.add_reaction(emojis[i])
 
+
+class SorteioView(View):
+    def __init__(self, interaction, emoji, timeout=300):
+        super().__init__(timeout=timeout)
+        self.iniciador = interaction.user
+        self.emoji = emoji
+        self.message = None
+
+    async def interaction_check(self, interaction):
+        if interaction.user != self.iniciador:
+            await interaction.response.send_message("Só o iniciador pode usar esses botões.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="🎲 Sortear", style=discord.ButtonStyle.success)
+    async def sortear(self, interaction: discord.Interaction, button: Button):
+        msg = await interaction.channel.fetch_message(self.message.id)
+        reaction = discord.utils.get(msg.reactions, emoji=self.emoji)
+
+        if reaction is None or reaction.count <= 1:
+            await interaction.response.edit_message(content="Ninguém reagiu para participar do sorteio.", view=None)
+            self.stop()
+            return
+
+        users = [user async for user in reaction.users()]
+        participantes = [u for u in users if not u.bot]
+
+        vencedor = random.choice(participantes)
+        await interaction.response.edit_message(content=f"🎉 O vencedor do sorteio é {vencedor.mention}!", view=None)
+        self.stop()
+
+    @discord.ui.button(label="🚫 Cancelar", style=discord.ButtonStyle.danger)
+    async def cancelar(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(content="Sorteio cancelado.", view=None)
+        self.stop()
+
+
+@bot.tree.command(name="sorteio", description="Sorteio entre quem reagir à mensagem", guild=guild)
+@app_commands.describe(nome="Nome do sorteio", tempo="Tempo para reagir", emoji="Emoji para reagir")
+async def sorteio_reacao(interaction: discord.Interaction, nome: str, tempo: int = 30, emoji: str = "🎉"):
+    if tempo < 5 or tempo > 300:
+        await interaction.response.send_message("Tempo deve ser entre 5 e 300 segundos.", ephemeral=True)
+        return
+
+    await interaction.response.send_message(
+        f"**{nome}**\nReaja com  {emoji}  para participar!\nVocê tem {tempo} segundos para reagir."
+    )
+    msg = await interaction.original_response()
+    try:
+        await msg.add_reaction(emoji)
+    except:
+        await interaction.followup.send("Emoji inválido.", ephemeral=True)
+        return
+
+    view = SorteioView(interaction, emoji, timeout=tempo)
+    view.message = msg
+    await msg.edit(view=view)
+
+    await view.wait()
+
+    if view.is_finished():  # Ou view.is_finished() == True
+        # Se a view já foi parada (botão clicado)
+        return  # Não faça mais nada
+
+    # Caso timeout e view não foi parada, faça o sorteio automático
+    reaction = discord.utils.get(msg.reactions, emoji=emoji)
+    if reaction is None or reaction.count <= 1:
+        await interaction.followup.send("Ninguém reagiu para participar do sorteio.", ephemeral=True)
+        return
+
+    users = [user async for user in reaction.users()]
+    participantes = [u for u in users if not u.bot]
+    vencedor = random.choice(participantes)
+
+    await msg.edit(content=f"🎉 O vencedor do sorteio **{nome}** é {vencedor.mention}!", view=None)
 
 bot.run(TOKEN)

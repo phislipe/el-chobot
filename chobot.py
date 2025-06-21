@@ -62,11 +62,15 @@ async def on_message(message: discord.Message):
 
 @bot.tree.command(name="comandos", description="Exibe lista de comandos do bot", guild=guild)
 async def comandos(interaction: discord.Interaction):
-    embed = discord.Embed(color=discord.Color.yellow())
-    embed.add_field(name="/comandos", value="Exibe lista de comandos do bot", inline=False)
+    embed = discord.Embed(title="📋 Comandos disponíveis", color=discord.Color.yellow())
+    embed.add_field(name="/comandos", value="Exibe esta lista de comandos", inline=False)
     embed.add_field(name="/convite", value="Envia um link com convite para o servidor", inline=False)
-    embed.add_field(name="/rolar", value="Rola um dado com valor escolhido", inline=False)
-    await interaction.response.send_message(embed=embed)
+    embed.add_field(name="/rolar", value="Rola dados no formato XdY (ex: 4d6)", inline=False)
+    embed.add_field(name="/enquete", value="Cria uma enquete com múltiplas opções", inline=False)
+    embed.add_field(name="/sorteio", value="Inicia um sorteio por reação com tempo e emoji customizáveis", inline=False)
+    await interaction.response.send_message(
+        embed=embed
+    )
 
 
 @bot.tree.command(name="convite", description="Envia um link com convite para o servidor", guild=guild)

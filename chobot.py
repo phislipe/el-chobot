@@ -1,7 +1,6 @@
 import os
 import re
 import asyncio
-import aiohttp
 import random
 import logging
 import discord
@@ -23,8 +22,6 @@ GIVEAWAY_MAX_TIME = 300
 
 load_dotenv(dotenv_path="ini.env")
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-VALHEIM_LOG_PATH = os.getenv("VALHEIM_LOG_PATH")
-VALHEIM_WEBHOOK_URL = os.getenv("VALHEIM_WEBHOOK_URL")
 
 CHANNEL_ID = 1385795977600045217
 GUILD_ID = 737751372790890508
@@ -38,6 +35,7 @@ bot = commands.Bot(command_prefix="", intents=intents)
 class WebhookMessageManager:
     def __init__(self):
         self.last_message_id = None
+        self.last_code = None
 
     async def handle_message(self, message: discord.Message):
         if message.channel.id != CHANNEL_ID or not message.webhook_id:
@@ -54,6 +52,34 @@ class WebhookMessageManager:
 
         self.last_message_id = message.id
 
+    async def clean_last_webhook(self, bot):
+        channel = bot.get_channel(CHANNEL_ID)
+        if not channel:
+            logging.warning("Channel not found.")
+            return
+
+        try:
+            webhook_messages = [
+                msg async for msg in channel.history(limit=50)
+                if msg.webhook_id
+            ]
+
+            if not webhook_messages:
+                return
+
+            webhook_messages.sort(key=lambda m: m.created_at, reverse=True)
+            latest = webhook_messages[0]
+            self.last_message_id = latest.id
+
+            for msg in webhook_messages[1:]:
+                try:
+                    await msg.delete()
+                except Exception as e:
+                    logging.warning(f"Failed to delete old message: {e}")
+
+        except Exception as e:
+            logging.warning(f"Error fetching webhook messages: {e}")
+
 
 webhook_message_manager = WebhookMessageManager()
 
@@ -67,70 +93,12 @@ async def on_ready():
         logging.info("Commands synced successfully")
     except Exception as e:
         logging.error(f"Error while syncing commands: {e}")
-    bot.loop.create_task(start_valheim_log_watcher(VALHEIM_LOG_PATH, VALHEIM_WEBHOOK_URL))
+    await webhook_message_manager.clean_last_webhook(bot)
 
 
 @bot.event
 async def on_message(message: discord.Message):
     await webhook_message_manager.handle_message(message)
-
-
-async def start_valheim_log_watcher(log_file_path: str, webhook_url: str):
-    last_join_code = None
-    shutdown_notified = False
-
-    async with aiohttp.ClientSession() as session:
-
-        async def send(content: str):
-            json_data = {'content': content}
-            async with session.post(webhook_url, json=json_data) as resp:
-                if resp.status != 204:
-                    text = await resp.text()
-                    logging.warning(f"[valheim_log] Webhook failed: {resp.status} - {text}")
-
-        await asyncio.sleep(5)
-
-        while True:
-            try:
-                with open(log_file_path, 'r', encoding='utf-8') as f:
-                    f.seek(0, 2)
-
-                    while True:
-                        line = f.readline()
-                        if not line:
-                            await asyncio.sleep(0.5)
-                            continue
-
-                        match = re.search(r'join code (\d{6})', line)
-                        if match:
-                            join_code = match.group(1)
-                            if join_code != last_join_code:
-                                msg = (
-                                    "⚔️ Sob a sombra de Yggdrasil, os portões de Valheim se abrem novamente, "
-                                    "convocando os guerreiros à glória iminente.\n\n"
-                                    f"📜Uma nova runa foi entalhada: **{join_code}**"
-                                )
-                                await send(msg)
-                                last_join_code = join_code
-                                shutdown_notified = False
-                            continue
-
-                        if 'Shutting down' in line and not shutdown_notified:
-                            msg = (
-                                "🍃 Os ventos mudaram...\n"
-                                "As raízes de Yggdrasil estremeceram, e a névoa agora cobre os salões de batalha.\n\n"
-                                "🔥 A chama dos portões se extinguiu.\n"
-                                "A jornada repousa — até que os deuses decidam reacendê-la."
-                            )
-                            await send(msg)
-                            shutdown_notified = True
-
-            except FileNotFoundError:
-                logging.warning(f"[valheim_log] Log file not found: {log_file_path}. Retrying...")
-                await asyncio.sleep(5)
-            except Exception as e:
-                logging.error(f"[valheim_log] Unexpected error: {e}")
-                await asyncio.sleep(5)
 
 
 @bot.tree.command(name="comandos", description="Exibe lista de comandos do bot", guild=guild)

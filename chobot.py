@@ -1,6 +1,5 @@
 import os
 import re
-import asyncio
 import random
 import logging
 import discord
@@ -23,65 +22,12 @@ GIVEAWAY_MAX_TIME = 300
 load_dotenv(dotenv_path="ini.env")
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-CHANNEL_ID = 1385795977600045217
 GUILD_ID = 737751372790890508
 guild = discord.Object(id=GUILD_ID)
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="", intents=intents)
-
-
-class WebhookMessageManager:
-    def __init__(self):
-        self.last_message_id = None
-        self.last_code = None
-
-    async def handle_message(self, message: discord.Message):
-        if message.channel.id != CHANNEL_ID or not message.webhook_id:
-            return
-
-        if self.last_message_id and self.last_message_id != message.id:
-            try:
-                old_msg = await message.channel.fetch_message(self.last_message_id)
-                await old_msg.delete()
-            except discord.NotFound:
-                pass
-            except Exception as e:
-                logging.warning(f"Error deleting previous message: {e}")
-
-        self.last_message_id = message.id
-
-    async def clean_last_webhook(self, bot):
-        channel = bot.get_channel(CHANNEL_ID)
-        if not channel:
-            logging.warning("Channel not found.")
-            return
-
-        try:
-            webhook_messages = [
-                msg async for msg in channel.history(limit=50)
-                if msg.webhook_id
-            ]
-
-            if not webhook_messages:
-                return
-
-            webhook_messages.sort(key=lambda m: m.created_at, reverse=True)
-            latest = webhook_messages[0]
-            self.last_message_id = latest.id
-
-            for msg in webhook_messages[1:]:
-                try:
-                    await msg.delete()
-                except Exception as e:
-                    logging.warning(f"Failed to delete old message: {e}")
-
-        except Exception as e:
-            logging.warning(f"Error fetching webhook messages: {e}")
-
-
-webhook_message_manager = WebhookMessageManager()
 
 
 @bot.event
@@ -93,12 +39,6 @@ async def on_ready():
         logging.info("Commands synced successfully")
     except Exception as e:
         logging.error(f"Error while syncing commands: {e}")
-    await webhook_message_manager.clean_last_webhook(bot)
-
-
-@bot.event
-async def on_message(message: discord.Message):
-    await webhook_message_manager.handle_message(message)
 
 
 @bot.tree.command(name="comandos", description="Exibe lista de comandos do bot", guild=guild)
